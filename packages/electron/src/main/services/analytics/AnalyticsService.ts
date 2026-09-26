@@ -5,6 +5,7 @@ import {logger} from "../../utils/logger";
 import {app} from "electron";
 import {getReleaseChannel, isAnalyticsEnabled, setAnalyticsEnabled} from "../../utils/store";
 import {isGitAvailable} from "../../utils/gitUtils";
+import {isLocalOnlyMode} from "../localOnlyMode";
 import {bucketDaysSinceInstall, bucketLaunchNumber, decideLaunch, type BuildType} from "./launchAttribution";
 import {dailyActiveProperties, decideDailyActive} from "./dailyActiveHeartbeat";
 
@@ -75,6 +76,14 @@ export class AnalyticsService {
   private launchAttribution?: { launchNumber: number; daysSinceInstall: number };
 
   public init(): void {
+    // Local-only mode: no client is ever constructed, so nothing in this
+    // service can reach PostHog. Returning before `healthCheck` also keeps its
+    // "CRITICAL: PostHog client not initialized" line out of main.log, which is
+    // a real outage signal in every other configuration.
+    if (isLocalOnlyMode()) {
+      this.log.info('[Analytics] Local-only mode: analytics is off, no client created');
+      return;
+    }
     this.postHogClient ??= this.initPostHogClient();
     this.sessionTracker ??= this.initPostHogClient();
     this.healthCheck();
@@ -87,6 +96,11 @@ export class AnalyticsService {
       this.log.warn('[Analytics] Skipping event: empty eventName');
       return;
     }
+
+    // Local-only mode is checked before the client check below, not after:
+    // there is deliberately no client in this mode, and the client check logs
+    // an ERROR for a missing one. Every event would report a fake outage.
+    if (isLocalOnlyMode()) return;
 
     // Check PostHog client initialization
     if (!this.postHogClient) {
@@ -186,6 +200,12 @@ export class AnalyticsService {
   }
 
   public async optIn(): Promise<void> {
+    if (isLocalOnlyMode()) {
+      // Refused rather than stored: turning the preference on would look, in
+      // the settings UI, like analytics is now being sent.
+      this.log.info('[Analytics] Local-only mode: ignoring analytics opt-in');
+      return;
+    }
     this.log.info('Processing analytics opt-in');
 
     this.postHogClient ??= this.initPostHogClient();
@@ -320,6 +340,11 @@ export class AnalyticsService {
   }
 
   public allowedToSendAnalytics(): boolean {
+    // Checked outside the try: local-only is a property of the process, not a
+    // store read, and it also feeds the renderer through `analytics:allowed`.
+    // The stored preference is left untouched, so turning the mode off restores
+    // whatever the user had chosen.
+    if (isLocalOnlyMode()) return false;
     // Check if user has enabled analytics in settings
     try {
       const enabled = isAnalyticsEnabled();

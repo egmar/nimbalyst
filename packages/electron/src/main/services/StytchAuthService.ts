@@ -24,6 +24,7 @@ import * as path from 'path';
 import { logger } from '../utils/logger';
 import { STYTCH_CONFIG, asPersonalJwt, asPersonalMemberId, type PersonalJwt, type PersonalMemberId } from '@nimbalyst/runtime';
 import { clearOrgWalkPreferences, getSessionSyncConfig, setSessionSyncConfig } from '../utils/store';
+import { isLocalOnlyMode } from './localOnlyMode';
 import { AnalyticsService } from './analytics/AnalyticsService';
 import { reconcilePersonalUserId } from './auth/personalUserIdReconcile';
 import { describeTransportError, isTransportError, type PersonalRefreshFailureReason } from './auth/personalJwtFailure';
@@ -439,6 +440,15 @@ function updateAuthState(update: Partial<StytchAuthState>): void {
  * IMPORTANT: Only pass the public token, never the secret key!
  */
 export function initializeStytchAuth(config: StytchConfig): void {
+  // Local-only mode never restores a session, so nothing downstream can decide
+  // it is signed in and start talking to Stytch on its own.
+  if (isLocalOnlyMode()) {
+    logger.main.info(
+      '[StytchAuthService] Local-only mode: skipping initialization and session restore'
+    );
+    return;
+  }
+
   stytchConfig = config;
 
   logger.main.info('[StytchAuthService] Initialized with project:', config.projectId);
@@ -895,8 +905,14 @@ export function getAuthState(): StytchAuthState {
 
 /**
  * Check if the user is authenticated.
+ *
+ * In local-only mode this is always false, whatever the stored credentials say.
+ * Every account path -- collab sync, the outbox drainers, the team directory
+ * fetch, org JWT issuance -- asks this question before it touches the network,
+ * so answering it here is what keeps all of them inert.
  */
 export function isAuthenticated(): boolean {
+  if (isLocalOnlyMode()) return false;
   return authState.isAuthenticated;
 }
 
@@ -939,6 +955,10 @@ export function getPersonalOrgId(): string | null {
  * personal org member ID so sync room IDs and encryption keys stay consistent.
  */
 export function getPersonalUserId(): PersonalMemberId | null {
+  // No account identity exists while local-only mode is on. Callers use this as
+  // "do I have an account to talk to the collab server as?", so null is the
+  // answer that keeps them from trying.
+  if (isLocalOnlyMode()) return null;
   return authState.personalUserId ? asPersonalMemberId(authState.personalUserId) : null;
 }
 

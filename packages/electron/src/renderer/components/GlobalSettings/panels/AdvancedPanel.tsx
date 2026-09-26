@@ -7,6 +7,7 @@ import { HelpTooltip } from '../../../help';
 import {
   advancedSettingsAtom,
   setAdvancedSettingsAtom,
+  localOnlyModeActiveAtom,
   resetWalkthroughsAtom,
   developerFeatureSettingsAtom,
   setDeveloperFeatureSettingsAtom,
@@ -83,6 +84,9 @@ export function AdvancedPanel() {
   const [settings] = useAtom(advancedSettingsAtom);
   const [, updateSettings] = useAtom(setAdvancedSettingsAtom);
   const [, resetWalkthroughs] = useAtom(resetWalkthroughsAtom);
+  // Whether local-only mode is in force right now (it can be on for this launch
+  // because of the environment variable, with the toggle still off).
+  const localOnlyModeActive = useAtomValue(localOnlyModeActiveAtom);
 
   // Current enhanced PATH (fetched from main process)
   const [enhancedPath, setEnhancedPath] = useState<string>('');
@@ -129,6 +133,7 @@ export function AdvancedPanel() {
   const {
     releaseChannel,
     analyticsEnabled,
+    localOnlyMode,
     extensionDevToolsEnabled,
     walkthroughsEnabled,
     walkthroughsViewedCount,
@@ -405,11 +410,29 @@ export function AdvancedPanel() {
         <RestorePreviousProjectsToggle />
 
         <SettingsToggle
-          checked={analyticsEnabled}
+          checked={localOnlyModeActive ? false : analyticsEnabled}
           onChange={(checked) => updateSettings({ analyticsEnabled: checked })}
+          disabled={localOnlyModeActive}
           name="Send Anonymous Usage Data"
-          description="Help improve Nimbalyst by sending anonymous usage data. No prompts or personal info collected."
+          description={localOnlyModeActive
+            ? 'Off while local-only mode is active. Your stored preference is kept, so turning local-only mode off restores it.'
+            : 'Help improve Nimbalyst by sending anonymous usage data. No prompts or personal info collected.'}
+          testId="usage-data-setting"
         />
+
+        <SettingsToggle
+          checked={localOnlyMode}
+          onChange={(checked) => updateSettings({ localOnlyMode: checked })}
+          name="Local-only Mode"
+          description="Run without a Nimbalyst account: no sign-in, no collaboration sync, and no anonymous usage data. Your files, sessions, and AI providers are unaffected. Applies after a restart."
+        />
+
+        {localOnlyModeActive && !localOnlyMode && (
+          <p className="mt-1 pl-7 text-xs text-[var(--nim-text-muted)]">
+            Local-only mode is on for this launch via the{' '}
+            <code className="nim-code">NIMBALYST_LOCAL_ONLY</code> environment variable.
+          </p>
+        )}
 
         <SettingsToggle
           checked={spellcheckEnabled}

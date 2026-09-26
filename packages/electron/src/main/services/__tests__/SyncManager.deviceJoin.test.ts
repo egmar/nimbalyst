@@ -15,13 +15,16 @@ const h = vi.hoisted(() => ({
   credentials: vi.fn(() => ({ encryptionKeySeed: 'seed' })),
   hostname: 'original-host', member: 'member', userData: '',
   deviceInfo: undefined as undefined | (() => {deviceId: string}),
+  localOnly: false,
+  created: 0,
 }));
 vi.mock('@nimbalyst/runtime/sync', () => ({
   setSyncImageCompressor: vi.fn(), setSyncClientInfo: vi.fn(),
   deriveEncryptionKey: vi.fn(async () => ({})), personalSyncEncryptionSalt: vi.fn(),
-  createCollabV3Sync: (config: {getDeviceInfo: typeof h.deviceInfo}) => { h.deviceInfo = config.getDeviceInfo; return ({ getPersonalSyncWriteGate: () => h.gate, onPersonalSyncWriteGateChange: (cb: typeof h.gateChanged) => { h.gateChanged = cb; return () => {}; }, onDeviceStatusChange: (cb: typeof h.joined) => { h.joined = cb; }, syncSettings: h.sentSettings }); },
+  createCollabV3Sync: (config: {getDeviceInfo: typeof h.deviceInfo}) => { h.created += 1; h.deviceInfo = config.getDeviceInfo; return ({ getPersonalSyncWriteGate: () => h.gate, onPersonalSyncWriteGateChange: (cb: typeof h.gateChanged) => { h.gateChanged = cb; return () => {}; }, onDeviceStatusChange: (cb: typeof h.joined) => { h.joined = cb; }, syncSettings: h.sentSettings }); },
   createSyncedSessionStore: (store: unknown) => store, createMessageSyncHandler: vi.fn(),
 }));
+vi.mock('../localOnlyMode', () => ({ isLocalOnlyMode: () => h.localOnly }));
 vi.mock('../sync/projectConfigSync', () => ({ createProjectConfigSync: () => ({ refresh: h.refresh, stop: vi.fn() }) }));
 vi.mock('../sync/projectConfigSources', () => ({ projectConfigSources: {} }));
 vi.mock('../../utils/store', () => ({
@@ -200,4 +203,18 @@ it('uses the same gate snapshot for initial status and live changes without clea
     h.gateChanged!(h.gate);
     expect(listener.mock.calls.at(-1)![0].personalSyncWriteGate.state).toBe('verified');
   } finally { off(); }
+});
+
+it('starts no sync provider in local-only mode, even with sync enabled for the project', async () => {
+  h.localOnly = true;
+  const providersBefore = h.created;
+  vi.resetModules();
+  const manager = await import('../SyncManager');
+  const baseStore = { local: true };
+
+  await expect(manager.initializeSync(baseStore as never)).resolves.toBe(baseStore);
+
+  expect(h.created).toBe(providersBefore);
+  expect(manager.getSyncProvider()).toBeNull();
+  h.localOnly = false;
 });

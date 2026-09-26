@@ -15,6 +15,7 @@ import {
 import { organizationDirectoryAtom, personalAccountsAtom, personalSyncProfilesAtom } from '../../../store/atoms/settingsDomains';
 import { stytchAuthAtom } from '../../../store/atoms/stytchAuth';
 import { dialogRef, useDialog } from '../../../contexts/DialogContext';
+import { localOnlyModeActiveAtom } from '../../../store/atoms/appSettings';
 import { DIALOG_IDS } from '../../../dialogs';
 import { AccountLoginForm } from '../../Accounts/AccountLoginForm';
 import { AccountOrgList } from './AccountOrgList';
@@ -60,6 +61,7 @@ export function SyncPanel({ section }: { section: PersonalSyncSection }) {
   const [pairError, setPairError] = useState<string | null>(null);
   const [, setAuthError] = useState<string | null>(null);
   const stytchAuth = useAtomValue(stytchAuthAtom) ?? { isAuthenticated: false, user: null };
+  const localOnlyModeActive = useAtomValue(localOnlyModeActiveAtom);
 
   // Personal account and profile state stay separate from organization state.
   const [allAccounts, setAllAccounts] = useAtom(personalAccountsAtom);
@@ -378,6 +380,35 @@ export function SyncPanel({ section }: { section: PersonalSyncSection }) {
     : section === 'devices'
       ? ['Devices', 'View devices paired to the active personal sync account.']
       : ['Mobile App', 'Pair your phone and choose which projects it can reach. Personal sync stays zero-knowledge encrypted.'];
+
+  // Local-only mode: there is no account to sign in to, no server to sync with
+  // and no device to pair. Replacing the panel rather than leaving it in place
+  // matters because auth reports signed out by design here -- the sign-in form
+  // would be offering a button that cannot work.
+  if (localOnlyModeActive) {
+    return (
+      <div className="personal-sync-panel provider-panel flex flex-col" data-component="SyncPanel" data-testid={`personal-sync-${section}`}>
+        <div className="provider-panel-header mb-5 pb-4 border-b border-[var(--nim-border)]">
+          <h3 className="provider-panel-title text-xl font-semibold leading-tight mb-1.5 text-[var(--nim-text)]">{heading[0]}</h3>
+          <p className="provider-panel-description text-[13px] leading-relaxed text-[var(--nim-text-muted)]">{heading[1]}</p>
+        </div>
+        <div
+          className="sync-local-only-notice rounded-lg border border-[var(--nim-border)] bg-[var(--nim-bg-secondary)] p-4 text-[13px] leading-relaxed text-[var(--nim-text-muted)]"
+          data-testid="sync-local-only-notice"
+        >
+          <div className="mb-2 flex items-center gap-2 font-semibold text-[var(--nim-text)]">
+            <MaterialSymbol icon="lock" size={16} />
+            Local-only mode
+          </div>
+          <p className="m-0">
+            Nimbalyst is running without an account, so sign-in, collaboration sync and device
+            pairing are off and the app stays off Nimbalyst's servers. Your projects, AI sessions
+            and AI providers are unaffected. Turn it off in Settings &gt; Advanced, then restart.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="personal-sync-panel provider-panel flex flex-col" data-component="SyncPanel" data-testid={`personal-sync-${section}`}>

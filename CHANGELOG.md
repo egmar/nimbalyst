@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 <!-- New features go here -->
 - Opt into unlimited open projects with a scrollable project rail and cleanup of unused project resources.
+- Local-only mode runs without a Nimbalyst account, collaboration sync, or anonymous usage data, and applies after a restart.
 
 ### Changed
 <!-- Changes to existing functionality go here -->

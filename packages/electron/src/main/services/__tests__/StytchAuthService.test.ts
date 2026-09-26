@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { files, fetchMock, openExternalMock } = vi.hoisted(() => ({
+const { files, fetchMock, openExternalMock, localOnly } = vi.hoisted(() => ({
   files: new Map<string, Buffer>(),
   fetchMock: vi.fn(),
   openExternalMock: vi.fn(),
+  localOnly: { value: false },
 }));
 
 vi.mock('electron', () => ({
@@ -27,6 +28,7 @@ vi.mock('../../utils/store', () => ({
   getSessionSyncConfig: vi.fn(() => ({ serverUrl: 'https://sync.example' })),
   setSessionSyncConfig: vi.fn(),
   clearOrgWalkPreferences: vi.fn(),
+  isLocalOnlyModeEnabled: vi.fn(() => localOnly.value),
 }));
 
 vi.mock('../../utils/logger', () => ({
@@ -39,6 +41,10 @@ vi.mock('../analytics/AnalyticsService', () => ({
   AnalyticsService: {
     getInstance: () => ({ sendEvent: vi.fn() }),
   },
+}));
+
+vi.mock('../localOnlyMode', () => ({
+  isLocalOnlyMode: () => localOnly.value,
 }));
 
 import {
@@ -1172,5 +1178,56 @@ describe('StytchAuthService refresh failure does not clear credentials', () => {
     // nuking credentials out from under share handlers. Only an explicit
     // signOut()/removeAccount() may clear them.
     expect(credentialSnapshot()).toEqual(before);
+  });
+});
+
+/**
+ * Local-only mode keeps the app off the account endpoints. `isAuthenticated`
+ * is the question every account path asks first — collab sync, the outbox
+ * drainers, the team directory fetch — so answering it here is what makes the
+ * rest of those paths inert without touching each one.
+ */
+describe('StytchAuthService local-only mode', () => {
+  beforeEach(async () => {
+    localOnly.value = false;
+    await signOut();
+    files.clear();
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    localOnly.value = false;
+  });
+
+  it('reports signed out, and refuses to restore a stored session on the next launch', async () => {
+    await handleAuthCallback({
+      intent: 'sign-in',
+      sessionToken: 'local-only-token',
+      sessionJwt: createJwt({ sub: 'member-local-only' }),
+      userId: 'member-local-only',
+      email: 'local@example.com',
+      orgId: 'personal-local-only',
+    });
+    expect(isAuthenticated()).toBe(true);
+
+    localOnly.value = true;
+    expect(isAuthenticated()).toBe(false);
+
+    // Second launch under local-only: the credentials are still on disk, and
+    // the initialization that would restore and refresh them is refused — so
+    // the session cannot be resurrected and nothing reaches Stytch.
+    vi.resetModules();
+    const restarted = await import('../StytchAuthService');
+    fetchMock.mockReset();
+
+    restarted.initializeStytchAuth({
+      projectId: 'project-local-only',
+      publicToken: 'public-local-only',
+      apiBase: 'https://stytch.example',
+    });
+
+    expect(restarted.isAuthenticated()).toBe(false);
+    expect(restarted.getPersonalUserId()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,9 @@
+> This is a **privacy-oriented fork** of [Nimbalyst](https://github.com/nimbalyst/nimbalyst), the open-source
+> visual workspace for coding agents. It follows upstream and adds a local-only mode: run with no Nimbalyst
+> account, no collaboration sync, and no anonymous usage data. Turn it on under Settings → Advanced, or at
+> launch with `NIMBALYST_LOCAL_ONLY=1`; it applies on the next start, and nothing is deleted — stored account
+> data, marketplace/extension installs, update checks, and your AI providers all keep working as before.
+
 <div align="center">
 
 <h1>Nimbalyst: Open-source visual workspace for building with Codex, Claude Code, OpenCode, and other coding agents. </h1><p><strong> Work on everything in one place: sessions, worktrees, tasks, docs, diagrams, mockups, commits, and code.</br> Visually editable. Deeply linked. </br>Free and MIT licensed. Desktop app for macOS, Windows, and Linux, with an iOS companion app.</p>

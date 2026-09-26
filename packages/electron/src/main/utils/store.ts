@@ -252,6 +252,10 @@ interface AppStoreSchema {
     projectId: string;
     publicToken: string;
   };
+  // Local-only mode: keep the app off the account, collab and telemetry
+  // endpoints. Restart-to-apply; see `services/localOnlyMode.ts` for the gate
+  // sites and the `NIMBALYST_LOCAL_ONLY` environment half of the decision.
+  localOnlyMode?: boolean;
   // Auto-update suppression (when user dismisses an update)
   updateDismissedVersion?: string;
   updateDismissedAt?: number;
@@ -2088,6 +2092,24 @@ export function isAnalyticsEnabled(): boolean {
 
 export function setAnalyticsEnabled(enabled: boolean): void {
   getAppStore().set('analyticsEnabled', enabled);
+}
+
+// Local-Only Mode
+// The persisted half of the local-only decision. The environment half lives in
+// `services/localOnlyMode.ts`; this only reports what the user stored.
+export function isLocalOnlyModeEnabled(): boolean {
+  try {
+    return getAppStore().get('localOnlyMode', false);
+  } catch (error) {
+    console.error('[Store] Failed to read localOnlyMode from store:', error);
+    // Fail to the setting's own default (off), mirroring how
+    // `isAnalyticsEnabled` fails to its default (on).
+    return false;
+  }
+}
+
+export function setLocalOnlyModeEnabled(enabled: boolean): void {
+  getAppStore().set('localOnlyMode', enabled);
 }
 
 // MockupLM Settings

@@ -1714,6 +1714,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setSessionId: (sessionId: string) => ipcRenderer.invoke('analytics:set-session-id', sessionId),
   },
 
+  // Local-only mode: no Nimbalyst account, no collab, no telemetry. Applies on
+  // the next launch (every gated service resolves the mode at boot).
+  localOnly: {
+    isEnabled: () => ipcRenderer.invoke('local-only:is-enabled') as Promise<boolean>,
+    setEnabled: (enabled: boolean) =>
+      ipcRenderer.invoke('local-only:set-enabled', enabled) as Promise<{ ok: boolean; restartRequired: boolean }>,
+  },
+
   // Feature usage tracking (local UX decisions -- tips, walkthroughs, onboarding)
   featureUsage: {
     record: (feature: string) => ipcRenderer.invoke('feature-usage:record', feature),

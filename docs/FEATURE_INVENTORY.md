@@ -467,6 +467,7 @@ Companion app; pairs with a desktop over encrypted sync. Voice mode is not inclu
 
 - Application: theme, AI providers, MCP servers, notifications, advanced, beta features, and extensions
 - Account: signed-in accounts, sync-account selection, active zero-knowledge mobile-sync profile, paired devices, and account-attributed shared links
+- Local-only mode: run with no Nimbalyst account, no collaboration sync, and no telemetry from either process. Set in Advanced settings, applied on the next launch, and forceable at launch with `NIMBALYST_LOCAL_ONLY=1`. Marketplace/extension and update checks and AI providers are unaffected, and stored account data is left in place
 - Project: sharing/organization attachment, project access, AI provider overrides, agent permissions, tracker config, GitHub, and extensions
 - Tools & Token Cost panel: per-tool-group estimated context-token cost and load policy (eager / on-demand / conditional) across built-in, extension, and user MCP servers; trackers toggle inline; reachable from the AI panel's token meter ("Manage tools")
 - Claude Code: custom executable path, environment variables, effort slider, plan mode, auto-commit, extended context

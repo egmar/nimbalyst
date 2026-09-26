@@ -18,6 +18,7 @@ import {
   onAuthStateChange,
 } from "./StytchAuthService";
 import { onNetworkAvailable } from "./NetworkAvailability";
+import { isLocalOnlyMode } from "./localOnlyMode";
 import { logger } from "../utils/logger";
 import {
   OutboxUpgradeRejectedError,
@@ -156,11 +157,21 @@ export class CollabOutboxDrainCoordinator {
   });
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private readonly stuckReportedAt = new Map<string, number>();
+  private identityUnavailableReported = false;
   private unsubscribeNetwork: (() => void) | null = null;
   private unsubscribeAuth: (() => void) | null = null;
 
   start(): void {
     if (this.periodicTimer) return;
+    // Local-only mode: no timers, no listeners, no drain. Gated here rather than
+    // at the call site so it is testable, and so the 30s heartbeat cannot log an
+    // identity outage for a mode in which there is deliberately no account.
+    if (isLocalOnlyMode()) {
+      logger.main.info(
+        '[CollabOutboxDrainer] Local-only mode: drainer not started'
+      );
+      return;
+    }
     this.unsubscribeNetwork = onNetworkAvailable(() =>
       this.trigger("network-restored")
     );
@@ -266,12 +277,21 @@ export class CollabOutboxDrainCoordinator {
     if (!net.isOnline()) return;
     const accountId = getPersonalUserId();
     if (!accountId) {
-      logger.main.error(
-        "[CollabOutboxDrainer] Personal account identity unavailable; refusing org-scoped fallback",
-        { source }
-      );
+      // Report the outage once, not once per tick. Nothing here can change on
+      // its own: while the user stays signed out the drain stays refused, so the
+      // 30s heartbeat printed the same error line every 30 seconds for as long
+      // as the app was open, and buried everything else in main.log.
+      if (!this.identityUnavailableReported) {
+        this.identityUnavailableReported = true;
+        logger.main.error(
+          "[CollabOutboxDrainer] Personal account identity unavailable; refusing org-scoped fallback",
+          { source }
+        );
+      }
       return;
     }
+    // The identity is back; a later loss is a new outage and gets its own line.
+    this.identityUnavailableReported = false;
     const startedAt = Date.now();
     void this.drainer
       // Only the unconditional 30s tick honours the retry backoff. Every other

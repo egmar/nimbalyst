@@ -849,6 +849,12 @@ interface ElectronAPI {
     setSessionId: (sessionId: string) => Promise<void>;
   };
 
+  /** Local-only mode: no Nimbalyst account, no collab, no telemetry. Applies on restart. */
+  localOnly: {
+    isEnabled: () => Promise<boolean>;
+    setEnabled: (enabled: boolean) => Promise<{ ok: boolean; restartRequired: boolean }>;
+  };
+
   // Feature usage tracking (local UX decisions)
   featureUsage: {
     record: (feature: string) => Promise<{ count: number; firstUsed: string; lastUsed: string }>;

@@ -41,6 +41,7 @@ import {
   initNotificationSettings,
   advancedSettingsAtom,
   initAdvancedSettings,
+  localOnlyModeActiveAtom,
   gutterCustomizationAtom,
   initGutterCustomization,
   syncConfigAtom,
@@ -175,6 +176,12 @@ await Promise.allSettled([
   initAdvancedSettings().then((settings) => {
     store.set(advancedSettingsAtom, settings);
   }),
+  // Whether local-only mode is in force for this process (environment variable
+  // or the stored preference). Main resolved it at boot and it does not change
+  // until restart, so this is read once and never written again.
+  window.electronAPI.localOnly.isEnabled().then((active) => {
+    store.set(localOnlyModeActiveAtom, active);
+  }),
   initGutterCustomization().then((state) => {
     store.set(gutterCustomizationAtom, state);
     // Subscribe after seeding so other-window gutter changes (hide/show/reorder)
@@ -220,10 +227,15 @@ const rootElement = document.getElementById('root') as HTMLElement;
 const root = ReactDOM.createRoot(rootElement);
 // console.log('[RENDERER] React root created at', new Date().toISOString());
 
-const analyticsId = await window.electronAPI.analytics?.getDistinctId() ?? '';
-const analyticsAllowed = await window.electronAPI.analytics?.allowedToSendAnalytics() ?? false;
+// Local-only mode (Settings > Advanced, or NIMBALYST_LOCAL_ONLY=1): main has
+// already resolved it for this process, so the renderer never constructs a
+// PostHog client. Read before anything can capture.
+const localOnlyMode = await window.electronAPI.localOnly?.isEnabled() ?? false;
+
+const analyticsId = localOnlyMode ? '' : await window.electronAPI.analytics?.getDistinctId() ?? '';
+const analyticsAllowed = localOnlyMode ? false : await window.electronAPI.analytics?.allowedToSendAnalytics() ?? false;
 const nimbalystVersion = await window.electronAPI.getAppVersion?.() ?? '';
-const releaseAttribution = await window.electronAPI.analytics?.getReleaseAttribution?.().catch(() => null) ?? null;
+const releaseAttribution = localOnlyMode ? null : await window.electronAPI.analytics?.getReleaseAttribution?.().catch(() => null) ?? null;
 const isDevInstallation = process.env.NODE_ENV?.toLowerCase() === 'development';
 const isDevMode = process.env.IS_DEV_MODE === 'true';
 const isOfficialBuild = process.env.OFFICIAL_BUILD === 'true';
@@ -235,7 +247,7 @@ if (isDevMode && !(window as any).PLAYWRIGHT) {
   document.body.style.setProperty('--dev-mode-label', `'${devLabel}'`);
 }
 
-const posthogClient = posthog.init(
+const posthogClient = localOnlyMode ? posthog : posthog.init(
   'phc_s3lQIILexwlGHvxrMBqti355xUgkRocjMXW4LjV0ATw',
   {
     bootstrap: {
@@ -289,34 +301,41 @@ const posthogClient = posthog.init(
   }
 )
 
-// Resolve the user's setting before anything can capture, then keep posthog-js
-// itself in sync so it also stops its own background requests -- not just the
-// events we hand it.
-setAnalyticsConsent(analyticsAllowed);
-if (analyticsAllowed) {
-  // `captureEventName: false` matters: opt_in_capturing() captures an `$opt_in`
-  // event by default, and this runs on every launch in every window. Applying
-  // an already-granted setting is not a user action and must not emit.
-  posthog.opt_in_capturing({ captureEventName: false });
-} else {
-  posthog.opt_out_capturing();
+// Local-only mode skips `posthog.init` rather than opting out: `opt_out_capturing()`
+// stops events but not the library's own config and feature-flag fetches, and the
+// requirement is zero requests to those destinations. The bare singleton is handed
+// to PostHogProvider below so `usePostHog()` consumers keep working -- every method
+// on an uninitialized posthog-js instance is a no-op.
+if (!localOnlyMode) {
+  // Resolve the user's setting before anything can capture, then keep posthog-js
+  // itself in sync so it also stops its own background requests -- not just the
+  // events we hand it.
+  setAnalyticsConsent(analyticsAllowed);
+  if (analyticsAllowed) {
+    // `captureEventName: false` matters: opt_in_capturing() captures an `$opt_in`
+    // event by default, and this runs on every launch in every window. Applying
+    // an already-granted setting is not a user action and must not emit.
+    posthog.opt_in_capturing({ captureEventName: false });
+  } else {
+    posthog.opt_out_capturing();
+  }
+
+  onAnalyticsConsentChange((enabled) => {
+    // This path is an explicit toggle, so the default `$opt_in` event is wanted
+    // here -- it mirrors the `analytics_opt_out` the main service records, and
+    // fires once per user action rather than once per launch.
+    if (enabled) posthog.opt_in_capturing(); else posthog.opt_out_capturing();
+  });
+
+  // Settings live in one window but the renderer client is per-window, so main
+  // broadcasts the change to every window rather than only the one that toggled.
+  initAnalyticsListeners();
+
+  // syncs the session ID from posthog-js to the electron-side analytics service
+  posthog.onSessionId(async (sessionId: string, windowId, changeReason) => {
+    window.electronAPI.analytics?.setSessionId(sessionId);
+  })
 }
-
-onAnalyticsConsentChange((enabled) => {
-  // This path is an explicit toggle, so the default `$opt_in` event is wanted
-  // here -- it mirrors the `analytics_opt_out` the main service records, and
-  // fires once per user action rather than once per launch.
-  if (enabled) posthog.opt_in_capturing(); else posthog.opt_out_capturing();
-});
-
-// Settings live in one window but the renderer client is per-window, so main
-// broadcasts the change to every window rather than only the one that toggled.
-initAnalyticsListeners();
-
-// syncs the session ID from posthog-js to the electron-side analytics service
-posthog.onSessionId(async (sessionId: string, windowId, changeReason) => {
-  window.electronAPI.analytics?.setSessionId(sessionId);
-})
 
 // IPC listeners (including ai:promptClaimed) live in store/listeners/* and
 // are initialized inside App.tsx once React mounts.

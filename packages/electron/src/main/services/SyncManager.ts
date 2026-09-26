@@ -26,6 +26,7 @@ import * as syncModule from '@nimbalyst/runtime/sync';
 import { deriveEncryptionKey, personalSyncEncryptionSalt } from '@nimbalyst/runtime/sync';
 import { getSessionSyncConfig, setSessionSyncConfig, getReleaseChannel, getDefaultAIModel, getAlphaFeatures, getPreferredAgentLanguage, getAttachmentStagingConfig, store, type SessionSyncConfig } from '../utils/store';
 import { logger } from '../utils/logger';
+import { isLocalOnlyMode } from './localOnlyMode';
 import { getCredentials } from './CredentialService';
 import { getStytchUserId, isAuthenticated, getPersonalOrgId, getPersonalUserId, resolvePersonalUserId, getPersonalSessionJwt, refreshPersonalSessionDetailed } from './StytchAuthService';
 import { describePersonalJwtFailure, type PersonalRefreshFailureReason } from './auth/personalJwtFailure';
@@ -292,6 +293,14 @@ function getDeviceInfo(personalMemberId: PersonalMemberId): DeviceInfo {
  */
 export async function initializeSync(baseStore: SessionStore): Promise<SessionStore> {
   logger.main.info('[SyncManager] initializeSync called');
+
+  // Local-only mode keeps the app off the collab server entirely. Checked here
+  // as well as in `isAuthenticated()` so the decision is visible in the module
+  // that would otherwise open the socket.
+  if (isLocalOnlyMode()) {
+    logger.main.info('[SyncManager] Local-only mode: session sync not started');
+    return baseStore;
+  }
 
   // Label every sync WebSocket connection with this client build so the server
   // can attribute connect/disconnect telemetry to a platform + version.

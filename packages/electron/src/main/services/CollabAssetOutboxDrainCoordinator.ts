@@ -8,6 +8,7 @@ import { uploadCollabAsset } from "./CollabAssetUploader";
 import { getCollabSyncHttpUrl } from "../utils/collabSyncUrl";
 import { getPersonalUserId, onAuthStateChange } from "./StytchAuthService";
 import { onNetworkAvailable } from "./NetworkAvailability";
+import { isLocalOnlyMode } from "./localOnlyMode";
 import { logger } from "../utils/logger";
 
 const PERIODIC_DRAIN_MS = 30_000;
@@ -65,6 +66,13 @@ export class CollabAssetOutboxDrainCoordinator {
 
   start(): void {
     if (this.periodicTimer) return;
+    // Local-only mode: see CollabOutboxDrainerService — same gate, same reason.
+    if (isLocalOnlyMode()) {
+      logger.main.info(
+        '[CollabAssetOutboxDrainer] Local-only mode: drainer not started'
+      );
+      return;
+    }
     this.unsubscribeNetwork = onNetworkAvailable(() =>
       this.trigger("network-restored")
     );

@@ -21,6 +21,7 @@ import {
     getDefaultEffortLevel, setDefaultEffortLevel,
     getDefaultThinkingMode, setDefaultThinkingMode,
     isAnalyticsEnabled,
+    isLocalOnlyModeEnabled, setLocalOnlyModeEnabled,
     getSessionSyncConfig, setSessionSyncConfig, SessionSyncConfig,
     isExtensionDevToolsEnabled, setExtensionDevToolsEnabled,
     getAppSetting, setAppSetting,
@@ -76,32 +77,29 @@ import {
 import { purgeOfflineCollabAccounts } from '../services/CollabOfflineAccountLifecycle';
 import { listPersonalSyncDevices, updatePersonalSyncDevices } from '../services/PersonalSyncDevicesService';
 import { recordProjectWalkOriginator } from '../services/ProjectWalkClaim';
+import { isLocalOnlyMode } from '../services/localOnlyMode';
+import { createStytchInitGate } from './stytchInitGate';
 
 // Track if we've subscribed to sync status changes
 let syncStatusListenerSetup = false;
 
-// Track if Stytch has been initialized
-let stytchInitialized = false;
-
 /**
- * Ensure Stytch is initialized based on current sync config.
- * This is called lazily when any Stytch IPC is invoked.
+ * Ensures Stytch is initialized based on current sync config. Called lazily when
+ * any Stytch IPC is invoked; the decision itself lives in `createStytchInitGate`
+ * so the local-only decline is testable without booting Electron.
  */
-function ensureStytchInitialized(): void {
-    if (stytchInitialized) return;
-
-    const config = STYTCH_CONFIG.live;
-
-    logger.main.info('[SettingsHandlers] Lazy-initializing Stytch');
-
-    StytchAuth.initializeStytchAuth({
-        projectId: config.projectId,
-        publicToken: config.publicToken,
-        apiBase: config.apiBase,
-    });
-
-    stytchInitialized = true;
-}
+const stytchInitGate = createStytchInitGate({
+    isLocalOnly: isLocalOnlyMode,
+    initialize: () => {
+        const config = STYTCH_CONFIG.live;
+        StytchAuth.initializeStytchAuth({
+            projectId: config.projectId,
+            publicToken: config.publicToken,
+            apiBase: config.apiBase,
+        });
+    },
+    log: (message) => logger.main.info(message),
+});
 
 /**
  * Note the window a sign-in was started from, so the post-sign-in project walk
@@ -750,6 +748,20 @@ export function registerSettingsHandlers() {
         await applyAnalyticsEnabled(enabled);
     });
 
+    // Local-only mode (Settings > Advanced). Stores the preference only: every
+    // gated service resolves the mode once at boot, so flipping the cache here
+    // would half-apply it — telemetry off, while the already-open sync socket
+    // starts reporting itself signed out. The next launch applies it cleanly.
+    safeHandle('local-only:is-enabled', () => {
+        return isLocalOnlyMode();
+    });
+
+    safeHandle('local-only:set-enabled', (_event, enabled: boolean) => {
+        setLocalOnlyModeEnabled(enabled);
+        logger.main.info(`[SettingsHandlers] Local-only mode ${enabled ? 'enabled' : 'disabled'} (applies on restart)`);
+        return { ok: true, restartRequired: true };
+    });
+
     // NOTE: MockupLM settings handlers removed - MockupLM now managed via extension system
 
     // Claude Code settings
@@ -950,7 +962,7 @@ export function registerSettingsHandlers() {
     // Switch which account's personalOrgId is used for session sync.
     // This persists the choice and reinitializes sync to connect to the new index room.
     safeHandle('sync:switch-sync-account', async (_event, personalOrgId: string) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         const accounts = StytchAuth.getAccounts();
         const account = accounts.find(a => a.personalOrgId === personalOrgId);
         if (!account) {
@@ -1050,7 +1062,7 @@ export function registerSettingsHandlers() {
         const config = getSessionSyncConfig();
 
         // Lazy init Stytch to check auth status
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
 
         // Sync is "configured" if the user is authenticated with Stytch
         // The serverUrl is derived from environment (defaults to wss://sync.nimbalyst.com)
@@ -1340,35 +1352,35 @@ export function registerSettingsHandlers() {
 
     // Get current Stytch auth state
     safeHandle('stytch:get-auth-state', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.getAuthState();
     });
 
     // Get all signed-in accounts (public info, no JWTs)
     safeHandle('stytch:get-accounts', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.getAccounts();
     });
 
     safeHandle('stytch:get-sync-account', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.getSyncAccount();
     });
 
     safeHandle('stytch:set-sync-account', (_event, personalOrgId: string) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return { success: StytchAuth.setSyncAccount(personalOrgId) };
     });
 
     // Check if user is authenticated with Stytch
     safeHandle('stytch:is-authenticated', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.isAuthenticated();
     });
 
     // Sign in with Google OAuth
     safeHandle('stytch:sign-in-google', async (event, rawOptions?: unknown) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         rememberSignInWindow(event);
         const options = parseAuthFlowOptions(rawOptions, 'sign-in');
         // Get the sync server URL from settings
@@ -1395,7 +1407,7 @@ export function registerSettingsHandlers() {
 
     // Send magic link for passwordless authentication
     safeHandle('stytch:send-magic-link', async (event, email: string, rawOptions?: unknown) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         if (!email) {
             return { success: false, error: 'Email is required' };
         }
@@ -1425,7 +1437,7 @@ export function registerSettingsHandlers() {
 
     // Sign out (all accounts)
     safeHandle('stytch:sign-out', async (_event, forceOfflinePurge = false) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         const accountIds = StytchAuth.getAccounts()
             .map((account) => account.personalUserId)
             .filter((accountId): accountId is string => !!accountId);
@@ -1455,7 +1467,7 @@ export function registerSettingsHandlers() {
         personalOrgId: string,
         forceOfflinePurge = false,
     ) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         const accountId = StytchAuth.getAccounts()
             .find((account) => account.personalOrgId === personalOrgId)
             ?.personalUserId;
@@ -1481,7 +1493,7 @@ export function registerSettingsHandlers() {
 
     // Delete account and all associated data
     safeHandle('stytch:delete-account', async (_event, personalOrgId?: string) => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         // Derive server URL same as other Stytch handlers
         const syncConfig = getSessionSyncConfig();
         const isDev = process.env.NODE_ENV !== 'production';
@@ -1497,19 +1509,19 @@ export function registerSettingsHandlers() {
 
     // Get session JWT for server authentication
     safeHandle('stytch:get-session-jwt', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.getSessionJwt();
     });
 
     // Validate and refresh the current session
     safeHandle('stytch:refresh-session', async () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         return StytchAuth.validateAndRefreshSession();
     });
 
     // Subscribe to auth state changes
     safeHandle('stytch:subscribe-auth-state', () => {
-        ensureStytchInitialized();
+        stytchInitGate.ensure();
         // Set up listener to broadcast auth state changes to all windows
         StytchAuth.onAuthStateChange((state) => {
             for (const window of BrowserWindow.getAllWindows()) {
@@ -1554,10 +1566,10 @@ export function registerSettingsHandlers() {
     // Switch Stytch environment (dev only - signs out and switches to test/live)
     safeHandle('stytch:switch-environment', async (_event, environment: 'development' | 'production') => {
         try {
-            // Reset initialized flag so next call re-initializes with new environment
-            stytchInitialized = false;
+            // Reopen the decision so the next call re-initializes with the new environment
+            stytchInitGate.reopen();
             await StytchAuth.switchStytchEnvironment(environment);
-            stytchInitialized = true; // Mark as initialized after switch
+            stytchInitGate.markInitialized(); // The switch has already initialized Stytch
             return { success: true };
         } catch (error) {
             logger.main.error('[Settings] Failed to switch Stytch environment:', error);

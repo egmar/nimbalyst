@@ -438,6 +438,12 @@ export type PreferredTerminalShell = 'auto' | 'pwsh' | 'powershell' | 'git-bash'
 export interface AdvancedSettings {
   releaseChannel: ReleaseChannel;
   analyticsEnabled: boolean;
+  /**
+   * Local-only mode: no Nimbalyst account, no collab, no telemetry. This is the
+   * user's stored preference; the mode itself resolves at boot and needs a
+   * restart, so it is not the same question as `localOnlyModeActiveAtom`.
+   */
+  localOnlyMode: boolean;
   extensionDevToolsEnabled: boolean;
   walkthroughsEnabled: boolean;
   walkthroughsViewedCount: number;
@@ -470,6 +476,7 @@ export interface AdvancedSettings {
 const defaultAdvancedSettings: AdvancedSettings = {
   releaseChannel: 'stable',
   analyticsEnabled: true,
+  localOnlyMode: false,
   extensionDevToolsEnabled: false,
   walkthroughsEnabled: true,
   walkthroughsViewedCount: 0,
@@ -541,6 +548,9 @@ function scheduleAdvancedPersist(
         case 'analyticsEnabled':
           await window.electronAPI.invoke('analytics:set-enabled', settingsToPersist.analyticsEnabled);
           break;
+        case 'localOnlyMode':
+          await window.electronAPI.localOnly.setEnabled(settingsToPersist.localOnlyMode);
+          break;
         case 'extensionDevToolsEnabled':
           await window.electronAPI.extensionDevTools.setEnabled(settingsToPersist.extensionDevToolsEnabled);
           break;
@@ -598,6 +608,24 @@ export const releaseChannelAtom = atom(
 export const analyticsEnabledAtom = atom(
   (get) => get(advancedSettingsAtom).analyticsEnabled
 );
+
+/**
+ * The user's stored local-only preference (the Settings toggle's value).
+ * Distinct from `localOnlyModeActiveAtom`, which reports whether the mode is
+ * actually in force for this process.
+ */
+export const localOnlyModeAtom = atom(
+  (get) => get(advancedSettingsAtom).localOnlyMode
+);
+
+/**
+ * Whether local-only mode is in force for this process: the environment
+ * variable or the stored preference, as main resolved it at boot. Fixed for the
+ * lifetime of the process -- the mode applies on restart -- so it is set once
+ * during bootstrap and never written again. Unlike the preference, it cannot be
+ * turned off by the UI when the environment forced it on.
+ */
+export const localOnlyModeActiveAtom = atom(false);
 
 /**
  * Extension dev tools enabled setting.
@@ -744,10 +772,11 @@ export async function initAdvancedSettings(): Promise<AdvancedSettings> {
   }
 
   try {
-    const [channel, analyticsEnabled, extensionDevToolsEnabled, walkthroughState, maxHeapSizeMB, alphaFeatures, betaFeatures, enableAllBetaFeatures, customPathDirs, spellcheckEnabled, showDirectChatProviders, historyMaxAgeDays, historyMaxSnapshots, preferredTerminalShell] =
+    const [channel, analyticsEnabled, localOnlyMode, extensionDevToolsEnabled, walkthroughState, maxHeapSizeMB, alphaFeatures, betaFeatures, enableAllBetaFeatures, customPathDirs, spellcheckEnabled, showDirectChatProviders, historyMaxAgeDays, historyMaxSnapshots, preferredTerminalShell] =
       await Promise.all([
         window.electronAPI.invoke('release-channel:get'),
         window.electronAPI.invoke('analytics:is-enabled'),
+        window.electronAPI.invoke('app-settings:get', 'localOnlyMode'),
         window.electronAPI.extensionDevTools.isEnabled(),
         window.electronAPI.invoke('walkthroughs:get-state'),
         window.electronAPI.invoke('app-settings:get', 'maxHeapSizeMB'),
@@ -770,6 +799,7 @@ export async function initAdvancedSettings(): Promise<AdvancedSettings> {
     return {
       releaseChannel: channel ?? 'stable',
       analyticsEnabled: analyticsEnabled ?? true,
+      localOnlyMode: localOnlyMode ?? false,
       extensionDevToolsEnabled: extensionDevToolsEnabled ?? false,
       walkthroughsEnabled: walkthroughState?.enabled ?? true,
       walkthroughsViewedCount,
