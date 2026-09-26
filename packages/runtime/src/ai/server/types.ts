@@ -295,6 +295,23 @@ export function shouldBlockStartedSessionProviderSwitch(
 export const CLAUDE_CODE_VARIANTS = ['fable', 'fable-5', 'opus', 'opus-5', 'opus-4-8', 'opus-4-7', 'opus-4-6', 'sonnet', 'sonnet-4-6', 'haiku'] as const;
 
 /**
+ * True when `combined` names a shipped Claude variant row
+ * (`claude-code:opus`, `claude-code-cli:sonnet-1m`, ...).
+ *
+ * The per-provider allow/hide lists in AI settings are written in these ids: the
+ * user curates the rows the picker showed them, and those rows were shipped
+ * variants. An id outside this namespace is one a custom Anthropic-compatible
+ * endpoint serves from its own catalog — nothing in such a list can refer to it
+ * — so a consumer must not let the lists hide it (see
+ * `modelEnablementFilter.ts`, where applying them emptied the picker).
+ */
+export function isShippedClaudeCodeModelId(combined: string): boolean {
+  const parsed = ModelIdentifier.tryParse(combined);
+  if (!parsed || !isClaudeCodeFamily(parsed.provider)) return false;
+  return normalizeClaudeCodeVariant(parsed.baseVariant) !== null;
+}
+
+/**
  * Resolves a configured model string to the SDK model value.
  *
  * Key behaviors:
@@ -322,6 +339,13 @@ export function resolveClaudeCodeModelVariant(configuredModel: string | undefine
       // Append [1m] suffix for extended context so the SDK auto-detects the 1M beta
       return parsed.isExtendedContext ? `${sdkBase}[1m]` : sdkBase;
     }
+
+    // Anything else is an id this provider does not own — normally one served by
+    // a custom Anthropic-compatible endpoint (settings.json
+    // `env.ANTHROPIC_BASE_URL`). Both the SDK and the CLI accept full model ids,
+    // so hand it over untouched: pinning it to an Anthropic id is what made the
+    // endpoint answer `model_not_found` (404) for every turn.
+    return parsed.model;
   }
 
   // Fallback for non-standard formats

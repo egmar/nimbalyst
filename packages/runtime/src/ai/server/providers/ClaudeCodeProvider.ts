@@ -39,17 +39,15 @@ import {
   AIModel,
   PermissionRequestContent,
   PermissionResponseContent,
-  CLAUDE_CODE_VARIANTS,
-  ModelIdentifier,
   resolveClaudeCodeModelVariant,
 } from '../types';
+import { CLAUDE_CODE_SAFE_FALLBACK_MODEL } from '../../modelConstants';
 import {
-  CLAUDE_CODE_VARIANT_VERSIONS,
-  CLAUDE_CODE_MODEL_LABELS,
-  CLAUDE_CODE_VARIANTS_WITH_1M,
-  CLAUDE_CODE_SAFE_FALLBACK_MODEL,
-  baseContextWindowForVariant,
-} from '../../modelConstants';
+  buildClaudeFamilyCatalog,
+  resolveClaudeFamilyDefaultModel,
+  setClaudeEndpointLoader,
+  type ClaudeEndpointLoader,
+} from './claudeCode/claudeEndpoint';
 import type { InterruptTurnResult } from '../AIProvider';
 import { isBedrockToolSearchError } from '../utils/errorDetection';
 import { AgentMessagesRepository } from '../../../storage/repositories/AgentMessagesRepository';
@@ -478,6 +476,12 @@ export class ClaudeCodeProvider extends BaseAgentProvider {
   public static setExtensionPluginsLoader(loader: ((workspacePath?: string) => Promise<Array<{ type: 'local'; path: string }>>) | null): void { ClaudeCodeDeps.setExtensionPluginsLoader(loader); }
   public static setClaudeCodeSettingsLoader(loader: (() => Promise<{ projectCommandsEnabled: boolean; userCommandsEnabled: boolean }>) | null): void { ClaudeCodeDeps.setClaudeCodeSettingsLoader(loader); }
   public static setClaudeSettingsEnvLoader(loader: (() => Promise<Record<string, string>>) | null): void { ClaudeCodeDeps.setClaudeSettingsEnvLoader(loader); }
+  /**
+   * Custom Anthropic-compatible endpoint (`settings.json` `env.ANTHROPIC_BASE_URL`)
+   * for this provider family. The host resolves it; this delegates to the shared
+   * module so both Claude providers and the registry read one source of truth.
+   */
+  public static setClaudeEndpointLoader(loader: ClaudeEndpointLoader | null): void { setClaudeEndpointLoader(loader); }
   public static setShellEnvironmentLoader(loader: (() => Record<string, string> | null) | null): void { ClaudeCodeDeps.setShellEnvironmentLoader(loader); }
   public static setEnhancedPathLoader(loader: (() => string) | null): void { ClaudeCodeDeps.setEnhancedPathLoader(loader); }
   public static setAdditionalDirectoriesLoader(loader: ((workspacePath: string) => string[]) | null): void { ClaudeCodeDeps.setAdditionalDirectoriesLoader(loader); }
@@ -3464,47 +3468,26 @@ export class ClaudeCodeProvider extends BaseAgentProvider {
 
   /**
    * Get Claude Code models.
-   * Returns standard models plus Sonnet 1M variant (access controlled by Anthropic).
+   *
+   * The list is endpoint-shaped: when `~/.claude/settings.json` points Claude
+   * Code at a custom Anthropic-compatible endpoint, these are the models that
+   * endpoint serves. The shipped Anthropic variants are returned only when
+   * there is no such endpoint — listing them alongside a gateway's models would
+   * offer rows that 404 the moment they are used.
    */
   static async getModels(): Promise<AIModel[]> {
-    const models: AIModel[] = [];
-
-    // Add models in desired order
-    for (const variant of CLAUDE_CODE_VARIANTS) {
-      // Base model. Current-gen variants run 1M natively at a flat price, so
-      // their base window is 1M; legacy/haiku stay 200k (see
-      // baseContextWindowForVariant / GitHub #825).
-      models.push({
-        id: ModelIdentifier.create('claude-code', variant).combined,
-        name: `Claude Agent · ${CLAUDE_CODE_MODEL_LABELS[variant]} ${CLAUDE_CODE_VARIANT_VERSIONS[variant]}`,
-        provider: 'claude-code' as const,
-        maxTokens: 8192,
-        contextWindow: baseContextWindowForVariant(variant)
-      });
-
-      // Add a separate 1M (`-1m`) row only for variants that still gate 1M
-      // behind the suffix. Current-gen variants are excluded — their base row is
-      // already 1M, so a `-1m` row would be a redundant duplicate.
-      if ((CLAUDE_CODE_VARIANTS_WITH_1M as readonly string[]).includes(variant)) {
-        models.push({
-          id: ModelIdentifier.create('claude-code', `${variant}-1m`).combined,
-          name: `Claude Agent · ${CLAUDE_CODE_MODEL_LABELS[variant]} ${CLAUDE_CODE_VARIANT_VERSIONS[variant]} (1M)`,
-          provider: 'claude-code' as const,
-          maxTokens: 8192,
-          contextWindow: 1000000
-        });
-      }
-
-    }
-
-    return models;
+    return buildClaudeFamilyCatalog('claude-code');
   }
 
   /**
-   * Get default model
+   * Get default model.
+   *
+   * Async because behind a custom endpoint the default is the endpoint's model
+   * (settings.json `model`, else the first model it serves) rather than
+   * `claude-code:opus`, which resolves to a pinned Anthropic id.
    */
-  static getDefaultModel(): string {
-    return this.DEFAULT_MODEL;
+  static async getDefaultModel(): Promise<string> {
+    return resolveClaudeFamilyDefaultModel('claude-code');
   }
 
   /**

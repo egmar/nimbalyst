@@ -1,5 +1,6 @@
 import { registerProviderCredentialHandlers } from './ProviderCredentialHandlers';
 import { registerCloudflareSandboxHandlers } from './CloudflareSandboxHandlers';
+import { resolveUnchosenAgentDefaultModel } from '../services/ai/agentDefaultModel';
 import { BrowserWindow, safeStorage, session, dialog } from 'electron';
 import { applyAnalyticsEnabled } from '../services/analytics/applyAnalyticsEnabled';
 import { safeHandle, safeOn } from '../utils/ipcRegistry';
@@ -714,7 +715,9 @@ export function registerSettingsHandlers() {
 
     // Default AI model settings
     safeHandle('settings:get-default-ai-model', () => {
-        return getDefaultAIModel();
+        // With nothing stored this answers the endpoint-aware default: behind a
+        // custom Claude endpoint the renderer's shipped literal would 404.
+        return resolveUnchosenAgentDefaultModel(getDefaultAIModel());
     });
 
     safeHandle('settings:set-default-ai-model', (_event, model: string) => {

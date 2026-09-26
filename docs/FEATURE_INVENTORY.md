@@ -49,7 +49,7 @@ Twelve built-in provider lanes, plus any agent an extension contributes. Every l
 
 **Coding agents**
 
-- Claude Code (Agent SDK with MCP, file access, plan mode, sub-agents)
+- Claude Code (Agent SDK with MCP, file access, plan mode, sub-agents). With a custom Anthropic-compatible endpoint set in `~/.claude/settings.json` (`env.ANTHROPIC_BASE_URL`), this lane and Claude Code CLI list that endpoint's models instead of the shipped variants and default new sessions to the endpoint's model
 - Claude Code CLI (off by default; the genuine CLI driven in a terminal, with a raw-terminal drawer for its native pickers and mid-session `/model` switching)
 - OpenAI Codex (SDK / app-server transport with MCP support)
 - OpenAI Codex over ACP

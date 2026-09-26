@@ -1,4 +1,4 @@
-import { isClaudeCodeFamily } from '@nimbalyst/runtime/ai/server/types';
+import { isClaudeCodeFamily, isShippedClaudeCodeModelId } from '@nimbalyst/runtime/ai/server/types';
 import { isHeadlessAgentAvailable } from './headlessAgentAvailability';
 
 export interface ProviderEnablement {
@@ -78,6 +78,11 @@ export function resolveProviderEnabled(
  * and every shipped variant is always visible. The special-cases below apply to
  * the whole Claude Code family (`claude-code` AND `claude-code-cli`) so the CLI
  * provider can't drift the way the SDK provider did.
+ *
+ * Both lists are written in shipped-variant ids. When a custom Anthropic-compatible
+ * endpoint supplies the catalog (`claudeEndpoint.ts`), its models are exempt from
+ * the allow-list: they are ids no entry in a list curated from shipped rows can
+ * name, and filtering on them left the family with no rows at all.
  */
 export function isModelEnabled(
   model: FilterableModel,
@@ -101,6 +106,12 @@ export function isModelEnabled(
         const baseId = model.id.replace(/-1m$/, '');
         if (list.includes(baseId)) return true;
       }
+      // The list predates the catalog it is applied to: it names shipped variants,
+      // because those are the rows the user was shown. An id outside that namespace
+      // comes from a custom Anthropic-compatible endpoint's own catalog, which no
+      // entry in the list can refer to — letting the list drop it emptied the picker
+      // for exactly the users who configured an endpoint.
+      if (!isShippedClaudeCodeModelId(model.id)) return true;
     }
     return list.includes(model.id);
   }

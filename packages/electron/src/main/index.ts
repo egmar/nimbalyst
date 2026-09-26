@@ -325,6 +325,7 @@ import { pathToFileURL } from 'url';
 import { registerLinuxAppImageProtocolHandler } from './services/LinuxProtocolRegistration';
 import { installWindowOpenGuard } from './window/windowOpenGuard';
 import { resolveClaudeConfigDir } from '@nimbalyst/runtime/ai/server/providers/claudeCode/claudeConfigDir';
+import { getHostEnvironment } from '@nimbalyst/runtime/host/hostEnvironment';
 import { parseConversationDeepLink } from '../shared/conversationDeepLinks';
 import {
     FEEDBACK_REQUEST_DEEP_LINK_HOST,
@@ -2382,6 +2383,43 @@ app.whenReady().then(async () => {
     OpenAICodexACPProvider.setClaudeSettingsEnvLoader(async () => {
         const settingsManager = ClaudeSettingsManager.getInstance();
         return settingsManager.getUserLevelEnv();
+    });
+
+    // Inject the custom Anthropic-compatible endpoint resolver
+    // (settings.json `env.ANTHROPIC_BASE_URL`). Both Claude Agent providers read
+    // their model catalog from this endpoint when one is configured — see
+    // claudeEndpoint.ts. Without it the picker lists the shipped Anthropic
+    // variants, which the endpoint answers with `model_not_found` (404).
+    let loggedClaudeEndpoint: string | null = null;
+    ClaudeCodeProvider.setClaudeEndpointLoader(async () => {
+        const settingsManager = ClaudeSettingsManager.getInstance();
+        const explicitOnly = getHostEnvironment().agentConfiguration === 'explicit-only';
+        // Mirrors sdkOptionsBuilder's merge order (process.env → login shell →
+        // settings.json env, settings winning) so we discover models from the
+        // same endpoint the child process will actually call.
+        const settingsEnv = explicitOnly ? {} : await settingsManager.getUserLevelEnv();
+        const shellEnv = explicitOnly ? {} : (getShellEnvironment() ?? {});
+        const processEnv = explicitOnly ? {} : process.env;
+        const baseUrl =
+            settingsEnv.ANTHROPIC_BASE_URL || shellEnv.ANTHROPIC_BASE_URL || processEnv.ANTHROPIC_BASE_URL;
+        if (!baseUrl) {
+            return null;
+        }
+
+        // The token comes only from ~/.claude/settings.json env: it belongs to
+        // the Claude Code login the user configured alongside that base URL.
+        // Never from process.env or the app's apiKeys store — the standing
+        // no-implicit-API-key rule.
+        const authToken = settingsEnv.ANTHROPIC_AUTH_TOKEN || settingsEnv.ANTHROPIC_API_KEY || undefined;
+        const model = await settingsManager.getUserLevelModel();
+
+        // This resolver runs on every catalog and default-model read; log the
+        // endpoint once per value so main.log records it without flooding.
+        if (loggedClaudeEndpoint !== baseUrl) {
+            loggedClaudeEndpoint = baseUrl;
+            console.log(`[CLAUDE-CODE] Custom endpoint configured: ${baseUrl}`);
+        }
+        return { baseUrl, authToken, model };
     });
 
     // Inject shell environment loader to pass the user's full login shell env vars

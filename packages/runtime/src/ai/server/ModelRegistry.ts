@@ -8,7 +8,9 @@ import {
   AI_PROVIDER_TYPES,
   ModelIdentifier,
   assertExhaustiveProvider,
+  isClaudeCodeFamily,
 } from './types';
+import { resolveClaudeEndpointConfig } from './providers/claudeCode/claudeEndpoint';
 
 interface ModelCatalogCacheEntry {
   provider: AIProviderType;
@@ -75,7 +77,16 @@ export class ModelRegistry {
     apiKey?: string,
     baseUrl?: string
   ): Promise<AIModel[]> {
-    const cacheScope = this.getCacheScope(provider, workspacePath, baseUrl);
+    const cacheScope = this.getCacheScope(
+      provider,
+      workspacePath,
+      baseUrl,
+      // Behind a custom Anthropic-compatible endpoint the Claude Agent catalog
+      // is that endpoint's model list, so two endpoints must not share a cache
+      // entry — otherwise switching endpoints serves the previous endpoint's
+      // models for up to the full TTL.
+      isClaudeCodeFamily(provider) ? (await resolveClaudeEndpointConfig())?.baseUrl : undefined,
+    );
     const cached = this.catalogCache.get(cacheScope);
     const cacheMatchesRequest = cached?.apiKey === apiKey;
 
@@ -213,12 +224,16 @@ export class ModelRegistry {
     provider: AIProviderType,
     workspacePath: string | undefined,
     baseUrl: string | undefined,
+    claudeEndpointBaseUrl: string | undefined = undefined,
   ): string {
     if (provider === 'opencode') {
       return JSON.stringify([provider, workspacePath ?? null]);
     }
     if (provider === 'lmstudio') {
       return JSON.stringify([provider, baseUrl ?? 'http://127.0.0.1:1234']);
+    }
+    if (isClaudeCodeFamily(provider)) {
+      return JSON.stringify([provider, claudeEndpointBaseUrl ?? null]);
     }
     return JSON.stringify([provider]);
   }

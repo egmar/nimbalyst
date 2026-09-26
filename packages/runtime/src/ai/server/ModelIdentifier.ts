@@ -12,7 +12,6 @@
 
 import { AIProviderType, AI_PROVIDER_TYPES, isClaudeCodeFamily } from './types';
 import {
-  CLAUDE_CODE_ACCEPTED_VARIANT_INPUTS,
   DEFAULT_MODELS,
   normalizeClaudeCodeVariant,
 } from '../modelConstants';
@@ -81,11 +80,14 @@ export class ModelIdentifier {
    */
   get baseVariant(): string {
     if (isClaudeCodeFamily(this.provider)) {
-      // Strip known suffixes
-      let variant = this.model.toLowerCase();
+      const variant = this.model.toLowerCase();
       for (const suffix of CLAUDE_CODE_VALID_SUFFIXES) {
         if (variant.endsWith(suffix)) {
-          return variant.slice(0, -suffix.length);
+          const stripped = variant.slice(0, -suffix.length);
+          // Only strip when what remains is a variant. `-1m` is Claude's
+          // extended-context suffix; a model id served by a custom endpoint
+          // that merely ends that way must not be rewritten into another id.
+          return normalizeClaudeCodeVariant(stripped) ? stripped : variant;
         }
       }
       return variant;
@@ -100,7 +102,11 @@ export class ModelIdentifier {
     if (!isClaudeCodeFamily(this.provider)) {
       return false;
     }
-    return this.model.toLowerCase().endsWith('-1m');
+    const variant = this.model.toLowerCase();
+    if (!variant.endsWith('-1m')) {
+      return false;
+    }
+    return normalizeClaudeCodeVariant(variant.slice(0, -'-1m'.length)) !== null;
   }
 
   /**
@@ -161,6 +167,10 @@ export class ModelIdentifier {
 
     // Validate model for provider
     if (isClaudeCodeFamily(provider)) {
+      if (!model) {
+        throw new Error(`Model is required for provider: ${provider}`);
+      }
+
       const normalizedModel = model.toLowerCase();
 
       // Strip known suffixes to get base variant
@@ -175,14 +185,18 @@ export class ModelIdentifier {
       }
 
       const normalizedVariant = normalizeClaudeCodeVariant(baseVariant);
-      if (!normalizedVariant) {
-        throw new Error(
-          `Invalid Claude Code variant: ${model}. Must be one of: ${CLAUDE_CODE_ACCEPTED_VARIANT_INPUTS.join(', ')} (optionally with -1m suffix)`
-        );
+      if (normalizedVariant) {
+        // Normalize to lowercase for consistency
+        return new ModelIdentifier(provider, normalizedVariant + suffix);
       }
 
-      // Normalize to lowercase for consistency
-      return new ModelIdentifier(provider, normalizedVariant + suffix);
+      // Not a variant: an id served by a custom Anthropic-compatible endpoint
+      // (settings.json `env.ANTHROPIC_BASE_URL`). Accept it verbatim, case
+      // included — endpoint ids are case-sensitive, and rejecting it would make
+      // tryParse() return null, which resolveProviderFromModel() reads as
+      // `claude-code` and would move a `claude-code-cli` session across the
+      // billing axis.
+      return new ModelIdentifier(provider, model);
     }
 
     if (provider === 'openai-codex') {

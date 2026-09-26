@@ -6,12 +6,13 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { useAtom, useSetAtom } from 'jotai';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { MaterialSymbol } from '@nimbalyst/runtime/ui/icons/MaterialSymbol';
 import {
   newSuperLoopDialogOpenAtom,
   upsertSuperLoopAtom,
 } from '../../store/atoms/superLoop';
+import { defaultAgentModelAtom } from '../../store/atoms/appSettings';
 import { SUPER_LOOP_DEFAULTS } from '../../../shared/types/superLoop';
 import { getClaudeCodeModelLabel } from '../../utils/modelUtils';
 
@@ -26,18 +27,20 @@ interface NewSuperLoopDialogProps {
   onSuperLoopCreated?: (superLoopId: string, worktreeId: string) => void;
 }
 
-const DEFAULT_MODEL = 'claude-code:opus';
-
 export const NewSuperLoopDialog: React.FC<NewSuperLoopDialogProps> = ({
   workspacePath,
   onSuperLoopCreated,
 }) => {
   const [isOpen, setIsOpen] = useAtom(newSuperLoopDialogOpenAtom);
   const upsertSuperLoop = useSetAtom(upsertSuperLoopAtom);
+  // The session's model comes from the app's default, not a shipped literal:
+  // behind a custom Claude endpoint `claude-code:opus` is a pinned Anthropic id
+  // the endpoint answers with 404.
+  const defaultModel = useAtomValue(defaultAgentModelAtom);
 
   const [taskDescription, setTaskDescription] = useState('');
   const [maxIterations, setMaxIterations] = useState<number>(SUPER_LOOP_DEFAULTS.maxIterations);
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [selectedModel, setSelectedModel] = useState<string>(defaultModel);
   const [agentModels, setAgentModels] = useState<AgentModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -83,9 +86,11 @@ export const NewSuperLoopDialog: React.FC<NewSuperLoopDialogProps> = ({
     if (isOpen) {
       setTaskDescription('');
       setMaxIterations(SUPER_LOOP_DEFAULTS.maxIterations);
-      setSelectedModel(DEFAULT_MODEL);
+      setSelectedModel(defaultModel);
       setError(null);
     }
+    // Deliberately not keyed on `defaultModel`: the effect is "reset on open", and
+    // re-running it on a default change would wipe a half-typed description.
   }, [isOpen]);
 
   const handleClose = useCallback(() => {
@@ -224,7 +229,7 @@ export const NewSuperLoopDialog: React.FC<NewSuperLoopDialogProps> = ({
                   {loadingModels ? (
                     <option value={selectedModel}>Loading models...</option>
                   ) : agentModels.length === 0 ? (
-                    <option value={DEFAULT_MODEL}>{getModelDisplayName(DEFAULT_MODEL)}</option>
+                    <option value={defaultModel}>{getModelDisplayName(defaultModel)}</option>
                   ) : (
                     agentModels.map((model) => (
                       <option key={model.id} value={model.id}>

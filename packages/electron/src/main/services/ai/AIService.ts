@@ -801,9 +801,8 @@ export class AIService {
       config.model = fullModel;
     } else {
       // Billing safety (#631 / NIM-848): a session with no resolved model must
-      // fall back to a STANDARD 200k model, never the 1M user-facing default
-      // (ModelRegistry.getDefaultModel('claude-code') is `opus-1m`). Sending the
-      // paid 1M beta for an empty/lost model silently bills the user.
+      // fall back to a STANDARD 200k model, never a 1M one. Sending the paid 1M
+      // beta for an empty/lost model silently bills the user.
       config.model = CLAUDE_CODE_SAFE_FALLBACK_MODEL;
     }
 

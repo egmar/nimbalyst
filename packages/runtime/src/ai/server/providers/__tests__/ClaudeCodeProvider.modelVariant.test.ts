@@ -108,6 +108,27 @@ describe('resolveClaudeCodeModelVariant', () => {
     });
   });
 
+  describe('custom endpoint models (non-variant ids)', () => {
+    // With `env.ANTHROPIC_BASE_URL` in settings.json, the endpoint serves its own
+    // model ids. Pinning one to an Anthropic model id is what made a session fail
+    // with `model_not_found` (404) against the user's own gateway, so an
+    // unrecognized id must reach the SDK/CLI unchanged.
+    it('passes an unrecognized model through verbatim', () => {
+      expect(resolveClaudeCodeModelVariant('claude-code:deepseek-v4.1-flash:cloud', DEFAULT_MODEL))
+        .toBe('deepseek-v4.1-flash:cloud');
+    });
+
+    it('passes an unrecognized model through for the CLI provider too', () => {
+      expect(resolveClaudeCodeModelVariant('claude-code-cli:qwen3-coder:30b', DEFAULT_MODEL))
+        .toBe('qwen3-coder:30b');
+    });
+
+    it('still rejects a model that belongs to a different provider', () => {
+      expect(() => resolveClaudeCodeModelVariant('openai:gpt-5', DEFAULT_MODEL))
+        .toThrow('requires a claude-code:* model identifier');
+    });
+  });
+
   describe('pinned-version variants', () => {
     it('opus-4-8 resolves to the full claude-opus-4-8 SDK model ID', () => {
       // Pinned after the canonical `opus` alias was bumped to Opus 5, so users
@@ -151,8 +172,10 @@ describe('resolveClaudeCodeModelVariant', () => {
       );
     });
 
-    it('throws for an unrecognized variant', () => {
-      expect(() => resolveClaudeCodeModelVariant('claude-code:unknown', DEFAULT_MODEL)).toThrow(
+    it('throws for an unrecognized model with no provider prefix', () => {
+      // Without a colon there is no provider to attribute the id to, so this is
+      // a malformed config value rather than a gateway model id.
+      expect(() => resolveClaudeCodeModelVariant('unknown-model', DEFAULT_MODEL)).toThrow(
         'Unsupported Claude Agent model'
       );
     });

@@ -17,7 +17,7 @@
  * (ANTHROPIC_BASE_URL), never a key.
  */
 
-import { ModelIdentifier } from '@nimbalyst/runtime/ai/server/types';
+import { ModelIdentifier, isClaudeCodeFamily } from '@nimbalyst/runtime/ai/server/types';
 import { normalizeClaudeCodeVariant, CLAUDE_CODE_PINNED_SDK_MODELS } from '@nimbalyst/runtime/ai/modelConstants';
 
 /**
@@ -33,8 +33,9 @@ import { normalizeClaudeCodeVariant, CLAUDE_CODE_PINNED_SDK_MODELS } from '@nimb
  * the suffix instead silently downgraded 1M selections to 200k (NIM-809).
  *
  * Returns `undefined` when there's nothing usable (let the CLI default). A bare
- * full model name (no recognizable variant) passes through unchanged since the
- * CLI also accepts full Anthropic model IDs.
+ * full model name (no recognizable variant) passes through unchanged, and so
+ * does a `claude-code-cli:<id>` id from a custom Anthropic-compatible endpoint —
+ * the CLI takes full model IDs as-is.
  */
 export function resolveClaudeCliModelArg(model: string | undefined): string | undefined {
   if (!model) return undefined;
@@ -55,7 +56,13 @@ export function resolveClaudeCliModelArg(model: string | undefined): string | un
 
   // Unknown format: a bare full model name is fine to pass through; a non-claude
   // combined id (e.g. `openai:gpt-5`) must never reach `claude --model`.
-  return parsed ? undefined : trimmed;
+  if (!parsed) return trimmed;
+
+  // A claude-family id outside the variant namespace is a custom endpoint's own
+  // model id, and the CLI's `--model` takes it verbatim. Returning undefined
+  // here dropped the flag entirely, so the session launched on whatever model
+  // the CLI defaults to.
+  return isClaudeCodeFamily(parsed.provider) ? parsed.model : undefined;
 }
 
 export interface ClaudeCliSpawnInput {

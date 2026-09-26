@@ -140,8 +140,26 @@ describe('ModelIdentifier', () => {
       expect(id.combined).toBe('claude-code:opus-4-8');
     });
 
-    it('throws on invalid claude-code variant', () => {
-      expect(() => ModelIdentifier.create('claude-code', 'invalid-variant')).toThrow('Invalid Claude Code variant');
+    // A custom Anthropic-compatible endpoint (settings.json env.ANTHROPIC_BASE_URL)
+    // serves model ids that are not Claude variants. They must round-trip verbatim:
+    // the provider prefix is what keeps a session on its billing axis
+    // (resolveProviderFromModel falls back to `claude-code` whenever tryParse
+    // returns null, which would flip a `claude-code-cli` session onto the SDK path).
+    it('passes a non-variant model id through verbatim, preserving case', () => {
+      const id = ModelIdentifier.create('claude-code', 'deepseek-v4.1-flash:cloud');
+      expect(id.provider).toBe('claude-code');
+      expect(id.model).toBe('deepseek-v4.1-flash:cloud');
+      expect(id.combined).toBe('claude-code:deepseek-v4.1-flash:cloud');
+    });
+
+    it('round-trips a gateway model id through parse with its provider intact', () => {
+      const id = ModelIdentifier.parse('claude-code-cli:deepseek-v4.1-flash:cloud');
+      expect(id.provider).toBe('claude-code-cli');
+      expect(id.model).toBe('deepseek-v4.1-flash:cloud');
+    });
+
+    it('still rejects an empty model for the claude-code family', () => {
+      expect(() => ModelIdentifier.create('claude-code', '')).toThrow('Model is required');
     });
 
     it('throws on invalid provider', () => {
@@ -168,6 +186,14 @@ describe('ModelIdentifier', () => {
 
     it('strips -1m suffix for claude-code models', () => {
       expect(ModelIdentifier.parse('claude-code:sonnet-1m').baseVariant).toBe('sonnet');
+    });
+
+    it('does NOT strip -1m from a base that is not a Claude variant', () => {
+      // `-1m` is Claude's extended-context suffix. A gateway model whose name
+      // merely ends that way must not be silently rewritten into another id.
+      const id = ModelIdentifier.parse('claude-code:qwen2.5-coder-1m');
+      expect(id.baseVariant).toBe('qwen2.5-coder-1m');
+      expect(id.isExtendedContext).toBe(false);
     });
 
     it('returns model as-is for other providers', () => {

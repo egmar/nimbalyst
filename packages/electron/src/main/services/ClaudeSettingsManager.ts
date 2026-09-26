@@ -446,6 +446,20 @@ export class ClaudeSettingsManager {
   }
 
   /**
+   * Get the user-level `model` from ~/.claude/settings.json.
+   *
+   * The Claude Code CLI/SDK treat this as the session's model when nothing
+   * overrides it. Against a custom endpoint it is normally the endpoint's own
+   * model id, which is why the picker seeds a row with it and a new session
+   * defaults to it. Returns undefined when the file has no model set.
+   */
+  async getUserLevelModel(): Promise<string | undefined> {
+    const settings = await this.readSettingsFile(this.getUserLevelPath());
+    const model = settings?.model;
+    return typeof model === 'string' && model.trim() ? model.trim() : undefined;
+  }
+
+  /**
    * Set user-level environment variables in ~/.claude/settings.json
    * Preserves all other settings in the file
    */

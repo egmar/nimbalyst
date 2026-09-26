@@ -84,6 +84,54 @@ describe('isModelEnabled', () => {
       expect(isModelEnabled({ id: 'claude-code:haiku', provider: 'claude-code' }, entry)).toBe(true);
     });
   });
+
+  /**
+   * A custom Anthropic-compatible endpoint (settings.json `env.ANTHROPIC_BASE_URL`)
+   * replaces the catalog with the endpoint's own models, so the picker lists ids
+   * the curation could not have named: an allow/hide list is written from the
+   * rows the user was shown, which were shipped variants. Applying it to an
+   * endpoint row emptied the group entirely, and the picker then fell back to a
+   * shipped label for a model the endpoint does not serve.
+   */
+  describe('endpoint-served models (ids outside the shipped variant namespace)', () => {
+    const curated = {
+      enabled: true,
+      models: ['claude-code:fable'],
+      hiddenModels: ['claude-code:opus', 'claude-code:opus-1m', 'claude-code:sonnet'],
+    };
+
+    it('are not filtered out by a list written in shipped ids', () => {
+      expect(
+        isModelEnabled({ id: 'claude-code:deepseek-v4.1-flash:cloud', provider: 'claude-code' }, curated),
+      ).toBe(true);
+    });
+
+    it('are exempt for the CLI provider too', () => {
+      const entry = { enabled: true, models: ['claude-code-cli:fable'] };
+      expect(
+        isModelEnabled({ id: 'claude-code-cli:deepseek-v4.1-flash:cloud', provider: 'claude-code-cli' }, entry),
+      ).toBe(true);
+    });
+
+    it('leave the shipped rows restricted as before', () => {
+      expect(isModelEnabled({ id: 'claude-code:opus', provider: 'claude-code' }, curated)).toBe(false);
+      expect(isModelEnabled({ id: 'claude-code:opus-1m', provider: 'claude-code' }, curated)).toBe(false);
+      expect(isModelEnabled({ id: 'claude-code:fable', provider: 'claude-code' }, curated)).toBe(true);
+    });
+
+    it('are still hidden when the denylist names them exactly', () => {
+      const entry = { enabled: true, hiddenModels: ['claude-code:deepseek-v4.1-flash:cloud'] };
+      expect(
+        isModelEnabled({ id: 'claude-code:deepseek-v4.1-flash:cloud', provider: 'claude-code' }, entry),
+      ).toBe(false);
+    });
+
+    it('are still hidden when their provider is off (the billing gate)', () => {
+      expect(
+        isModelEnabled({ id: 'claude-code-cli:deepseek-v4.1-flash:cloud', provider: 'claude-code-cli' }, { enabled: false }),
+      ).toBe(false);
+    });
+  });
 });
 
 /**

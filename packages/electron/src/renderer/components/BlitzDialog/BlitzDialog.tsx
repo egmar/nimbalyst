@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { getProviderIcon } from '@nimbalyst/runtime/ui/icons/ProviderIcons';
 import { getClaudeCodeModelLabel } from '../../utils/modelUtils';
+import { defaultAgentModelAtom } from '../../store/atoms/appSettings';
 
 interface Model {
   id: string;
@@ -31,7 +33,10 @@ export const BlitzDialog: React.FC<BlitzDialogProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [modelSelections, setModelSelections] = useState<ModelSelection[]>([]);
-  const [analysisModel, setAnalysisModel] = useState<string>('claude-code:opus');
+  // The app's default, not a shipped literal: behind a custom Claude endpoint
+  // `claude-code:opus` is a pinned Anthropic id the endpoint answers with 404.
+  const defaultModel = useAtomValue(defaultAgentModelAtom);
+  const [analysisModel, setAnalysisModel] = useState<string>(defaultModel);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +77,7 @@ export const BlitzDialog: React.FC<BlitzDialogProps> = ({
 
           // Default analysis model to opus if available, otherwise first model
           const opusModel = selections.find(s => s.id.includes('opus'));
-          setAnalysisModel(opusModel?.id || selections[0]?.id || 'claude-code:opus');
+          setAnalysisModel(opusModel?.id || selections[0]?.id || defaultModel);
         }
       } catch (err) {
         console.error('[BlitzDialog] Failed to load models:', err);

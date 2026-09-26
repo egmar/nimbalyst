@@ -471,7 +471,9 @@ export const AgentMode = forwardRef<AgentModeRef, AgentModeProps>(function Agent
       createdAt: Date.now(),
       updatedAt: Date.now(),
       provider: data.analysisProvider || 'claude-code',
-      model: data.analysisModel || 'claude-code:opus',
+      // No shipped literal: behind a custom Claude endpoint `claude-code:opus` is
+      // a pinned Anthropic id the endpoint answers with 404.
+      model: data.analysisModel || defaultModel,
       sessionType: 'session',
       messageCount: 0,
       workspaceId: workspacePath,

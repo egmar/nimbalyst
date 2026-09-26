@@ -513,6 +513,15 @@ describe('resolveClaudeCliModelArg', () => {
     expect(resolveClaudeCliModelArg(undefined)).toBeUndefined();
     expect(resolveClaudeCliModelArg('   ')).toBeUndefined();
   });
+
+  it('passes a gateway model id through, minus the provider prefix', () => {
+    // Behind a custom endpoint (settings.json ANTHROPIC_BASE_URL) `--model` has
+    // to carry the gateway's own id; dropping it launched the session on
+    // whatever model the CLI defaults to.
+    expect(resolveClaudeCliModelArg('claude-code-cli:deepseek-v4.1-flash:cloud')).toBe(
+      'deepseek-v4.1-flash:cloud',
+    );
+  });
 });
 
 // #684: node-pty runs a `.cmd`/`.bat` through cmd.exe, which is line-oriented, so

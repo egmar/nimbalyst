@@ -97,20 +97,48 @@ function getClaudeCodeFamilyPrefix(modelId?: string): string {
   return parsed?.provider === 'claude-code-cli' ? 'Claude Code CLI' : 'Claude Agent';
 }
 
-export function getClaudeCodeModelLabel(modelId?: string): string {
-  const variant = extractClaudeCodeVariant(modelId) ?? 'sonnet';
+/**
+ * The raw model id when a Claude Agent session points outside the shipped
+ * variant set — normally a model served by a custom Anthropic-compatible
+ * endpoint (`settings.json` `env.ANTHROPIC_BASE_URL`). Such an id has no vendor
+ * label, and the `sonnet` fallback below rendered every one of them as
+ * "Claude Agent · Sonnet 5".
+ */
+function getNonVariantClaudeModelId(modelId?: string): string | null {
   const parsed = modelId ? ModelIdentifier.tryParse(modelId) : null;
-  const version = CLAUDE_CODE_VARIANT_VERSIONS[variant];
+  return parsed && isClaudeCodeFamily(parsed.provider) ? parsed.model : null;
+}
+
+export function getClaudeCodeModelLabel(modelId?: string): string {
+  const variant = extractClaudeCodeVariant(modelId);
+  if (!variant) {
+    const endpointModel = getNonVariantClaudeModelId(modelId);
+    if (endpointModel) {
+      return `${getClaudeCodeFamilyPrefix(modelId)} · ${endpointModel}`;
+    }
+  }
+
+  const resolved = variant ?? 'sonnet';
+  const parsed = modelId ? ModelIdentifier.tryParse(modelId) : null;
+  const version = CLAUDE_CODE_VARIANT_VERSIONS[resolved];
   const suffix = parsed?.isExtendedContext ? ' (1M)' : '';
-  return `${getClaudeCodeFamilyPrefix(modelId)} · ${formatVariantLabel(variant)} ${version}${suffix}`;
+  return `${getClaudeCodeFamilyPrefix(modelId)} · ${formatVariantLabel(resolved)} ${version}${suffix}`;
 }
 
 export function getClaudeCodeModelShortLabel(modelId?: string): string {
-  const variant = extractClaudeCodeVariant(modelId) ?? 'sonnet';
+  const variant = extractClaudeCodeVariant(modelId);
+  if (!variant) {
+    const endpointModel = getNonVariantClaudeModelId(modelId);
+    if (endpointModel) {
+      return endpointModel;
+    }
+  }
+
+  const resolved = variant ?? 'sonnet';
   const parsed = modelId ? ModelIdentifier.tryParse(modelId) : null;
-  const version = CLAUDE_CODE_VARIANT_VERSIONS[variant];
+  const version = CLAUDE_CODE_VARIANT_VERSIONS[resolved];
   const suffix = parsed?.isExtendedContext ? ' (1M)' : '';
-  return `${formatVariantLabel(variant)} ${version}${suffix}`;
+  return `${formatVariantLabel(resolved)} ${version}${suffix}`;
 }
 
 /**

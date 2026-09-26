@@ -53,8 +53,13 @@ describe('claude-code-cli provider wiring (Phase 0)', () => {
       expect(id.isExtendedContext).toBe(true);
     });
 
-    it('rejects invalid variants', () => {
-      expect(() => ModelIdentifier.parse('claude-code-cli:not-a-variant')).toThrow('Invalid Claude Code variant');
+    it('keeps an id outside the variant namespace on its own provider', () => {
+      // A custom endpoint (settings.json ANTHROPIC_BASE_URL) serves ids Nimbalyst
+      // never shipped. The provider prefix is what keeps the subscription lane
+      // distinct — a null parse would send this session down the API-billed path.
+      const id = ModelIdentifier.parse('claude-code-cli:qwen3-coder:30b');
+      expect(id.provider).toBe('claude-code-cli');
+      expect(id.model).toBe('qwen3-coder:30b');
     });
 
     it('has a parseable default model', () => {

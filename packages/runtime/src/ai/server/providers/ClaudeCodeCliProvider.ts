@@ -33,15 +33,8 @@ import {
   ProviderConfig,
   StreamChunk,
 } from '../types';
-import { ModelIdentifier } from '../ModelIdentifier';
-import { CLAUDE_CODE_VARIANTS } from '../types';
-import {
-  CLAUDE_CODE_VARIANT_VERSIONS,
-  CLAUDE_CODE_MODEL_LABELS,
-  CLAUDE_CODE_VARIANTS_WITH_1M,
-  DEFAULT_MODELS,
-  baseContextWindowForVariant,
-} from '../../modelConstants';
+import { DEFAULT_MODELS } from '../../modelConstants';
+import { buildClaudeFamilyCatalog, resolveClaudeFamilyDefaultModel } from './claudeCode/claudeEndpoint';
 import type { ProviderSessionData } from './ProviderSessionManager';
 
 export class ClaudeCodeCliProvider extends BaseAgentProvider {
@@ -79,35 +72,19 @@ export class ClaudeCodeCliProvider extends BaseAgentProvider {
    * Model catalog — shares the Claude variant set with `claude-code` but under
    * the `claude-code-cli:` namespace so the two providers stay distinct in the
    * registry and the per-session billing lock holds.
+   *
+   * Endpoint-shaped, like `claude-code`: against a custom Anthropic-compatible
+   * endpoint the CLI serves that endpoint's models, not the shipped variants.
    */
   static async getModels(): Promise<AIModel[]> {
-    const models: AIModel[] = [];
-
-    for (const variant of CLAUDE_CODE_VARIANTS) {
-      models.push({
-        id: ModelIdentifier.create('claude-code-cli', variant).combined,
-        name: `Claude Code CLI · ${CLAUDE_CODE_MODEL_LABELS[variant]} ${CLAUDE_CODE_VARIANT_VERSIONS[variant]}`,
-        provider: 'claude-code-cli' as const,
-        maxTokens: 8192,
-        // Current-gen variants run 1M natively (see baseContextWindowForVariant / #825).
-        contextWindow: baseContextWindowForVariant(variant),
-      });
-
-      if ((CLAUDE_CODE_VARIANTS_WITH_1M as readonly string[]).includes(variant)) {
-        models.push({
-          id: ModelIdentifier.create('claude-code-cli', `${variant}-1m`).combined,
-          name: `Claude Code CLI · ${CLAUDE_CODE_MODEL_LABELS[variant]} ${CLAUDE_CODE_VARIANT_VERSIONS[variant]} (1M)`,
-          provider: 'claude-code-cli' as const,
-          maxTokens: 8192,
-          contextWindow: 1000000,
-        });
-      }
-    }
-
-    return models;
+    return buildClaudeFamilyCatalog('claude-code-cli');
   }
 
-  static getDefaultModel(): string {
-    return ClaudeCodeCliProvider.DEFAULT_MODEL;
+  /**
+   * Async for the same reason as `claude-code`: behind a custom endpoint the
+   * default is the endpoint's model, not the pinned `claude-code-cli:opus`.
+   */
+  static async getDefaultModel(): Promise<string> {
+    return resolveClaudeFamilyDefaultModel('claude-code-cli');
   }
 }
